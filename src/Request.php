@@ -21,7 +21,9 @@ class Request {
         CURLOPT_CONNECTTIMEOUT => 10,
     ];
     private $response_history = [];
-    
+    private $callback_success;
+    private $callback_error;
+    private $callback_complete;
     
     public function __get($key){
         if( in_array($key, self::LAST_RESPONSE_ALIAS) ){
@@ -134,8 +136,39 @@ class Request {
         return $this;
     }    
 
+    /**
+     * Add options for cURL request
+     * @link https://www.php.net/manual/pt_BR/curl.constants.php
+     */
     public function curlOption($key, $value):self {
         $this->curl_options[$key] = $value;
+
+        return $this;
+    }
+
+    /**
+     * Callback that will be executed if the request is successful
+     */
+    public function onSuccess(callable $callback):self {
+        $this->callback_success = $callback;
+
+        return $this;
+    }
+    
+    /**
+     * Callback that will be executed if a request error is found
+     */
+    public function onError(callable $callback):self {
+        $this->callback_error = $callback;
+
+        return $this;
+    }
+
+    /**
+     * Callback that will be executed at the end of the request
+     */
+    public function onComplete(callable $callback):self {
+        $this->callback_complete = $callback;
 
         return $this;
     }
@@ -152,7 +185,7 @@ class Request {
      */
     public function getResponseHistory():Array {                
         return $this->response_history;
-    }
+    }    
 
     /**
      * Executes an HTTP request with GET method
@@ -294,6 +327,21 @@ class Request {
         }
 
         $response = new Response(new \RestClient\cURL\Handler($curlopt), $this->response_format);
+
+        if($response->get_errno()){
+            if($this->callback_error){
+                call_user_func($this->callback_error, $response);        
+            }
+        }
+        else{
+            if($this->callback_success){
+                call_user_func($this->callback_success, $response);        
+            }
+        }        
+
+        if($this->callback_complete){
+            call_user_func($this->callback_complete, $response);        
+        }
 
         $this->response_history[] = $response;
         

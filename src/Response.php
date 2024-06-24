@@ -139,6 +139,14 @@ class Response {
         return $this->ch->{$name};    
     }
 
+    public function getHeaderLine(string $name){
+        $header = strtolower($name);
+
+        if(array_key_exists($header, $this->headers)){
+            return $this->headers[$header];
+        }
+    }
+
     private function parse_response(string $response){
         $headers = [];
         $response_status_lines = [];
@@ -156,7 +164,7 @@ class Response {
             else { 
                 // Has to be a header
                 list($key, $value) = explode(':', $line, 2);
-                $key = trim(strtolower(str_replace('-', '_', $key)));
+                $key = trim(strtolower($key));
                 $value = trim($value);
                 
                 if(empty($headers[$key])){
@@ -172,12 +180,12 @@ class Response {
         } 
         while($line = strtok("\n"));
         
-        $this->headers = (object) $headers;
+        $this->headers = $headers;
         $this->body = strtok("");
 
         // Extract format from response content-type header. 
-        if( empty($this->format) && !empty($this->headers->content_type)) {
-            if( preg_match("/(\w+)\/(\w+)(;[.+])?/", $this->headers->content_type, $matches) ){
+        if( empty($this->format) && array_key_exists('content-type', $this->headers)) {
+            if( preg_match("/(\w+)\/(\w+)(;[.+])?/", $this->headers['content-type'], $matches) ){
                 $this->format = $matches[2];
             }                
         } 
@@ -188,7 +196,7 @@ class Response {
             return call_user_func($callable, $this->body);
         }
         
-        switch($this->format) {
+        switch(strtolower($this->format)) {
             case 'json':
                 return json_decode($this->body, true);
             case 'xml':
