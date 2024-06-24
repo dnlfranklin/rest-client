@@ -2,159 +2,219 @@
 
 namespace RestClient;
 
-use RestClient\Extension\LogExtension;
-use RestClient\Log\LogData;
 
 class Request {
-    // Alias for the last RestClientResponse received
+    
+    /** @var Array LAST_RESPONSE_ALIAS contains alias for the last Response received */
     const LAST_RESPONSE_ALIAS = ['response', 'last_response'];
 
-    private $options; // Custom options
-    private $headers; // Static headers for all requests
-    private $parameters; //Static parameters for all requests
-    private $curl_options; //Custom curl options
-    private $response_history; // History of responses received.
-    private $logger; // record log of requests sent along with the responses received 
+    private $build_indexed_queries = false;
+    private $base_url;
+    private $request_format;
+    private $response_format;
+    private $headers = [];
+    private $curl_options = [
+        CURLOPT_HEADER         => TRUE,
+        CURLOPT_RETURNTRANSFER => TRUE,
+        CURLOPT_SSL_VERIFYHOST => FALSE,
+        CURLOPT_SSL_VERIFYPEER => FALSE,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ];
+    private $response_history = [];
     
-    public function __construct(Array $options=[], Array $headers = [], Array $parameters = [], Array $curl_options= []){
-        $default_options = [
-            'build_indexed_queries' => FALSE,
-            'user_agent' => 'PHP RestClientRequest/1.0.0',
-            'base_url' => NULL, // Base URL to compose all endpoints sent in this object instance
-            'format' => NULL, // Defines the format of the request body that will be sent and processes the data along with the inclusion of the appropriate content-type. Currently supported formats: json, xml e form
-            'username' => NULL, // username for basic authenticate
-            'password' => NULL, // passoword for basic authenticate
-            'token' => NULL, // JWT token for bearer authenticate
-            'idempotencykey' => NULL, // Defines whether the request will send an idempotency key in the header. The attribute name must be passed and the GUID is automatically generated 
-            'info' => NULL, // Additional information that is stored in the response and log to facilitate a grouped search or history of the request context
-            'response_format' => NULL // Defines the format of the response body that will be received. If it is not passed, it will be automatically detected. Currently supported formats: json, xml and html
-        ];
-
-        $default_curl_options = [
-            CURLOPT_HEADER => TRUE, 
-            CURLOPT_RETURNTRANSFER => TRUE, 
-            CURLOPT_SSL_VERIFYHOST => FALSE,
-            CURLOPT_SSL_VERIFYPEER => FALSE,
-            CURLOPT_CONNECTTIMEOUT => 10
-        ];
-        $this->options = array_merge($default_options, $options);
-        $this->headers = $headers;
-        $this->parameters = $parameters;
-        $this->curl_options = $default_curl_options + $curl_options;
-        $this->response_history = [];
-    }
-
+    
     public function __get($key){
         if( in_array($key, self::LAST_RESPONSE_ALIAS) ){
             return $this->getResponse();
         }
     }
-    
-    public function setOption(string $key, $value){
-        $this->options[$key] = $value;
+
+    /**
+     * Base URL to compose all endpoints sent in this object instance
+     */
+    public function baseUrl(string $url):self {
+        if(!filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException('Invalid URL format');
+        }
+        
+        $this->base_url = $url;
+
+        return $this;
     }
 
-    public function setHeader(string $key, $value){
+    /**
+     * http_build_query automatically adds an array index to repeated 
+     * parameters which is not desirable on most systems. 
+     * This hack reverts "key[0]=foo&key[1]=bar" to "key[]=foo&key[]=bar"
+     * It will only be applied in cases where the request format is not defined
+     */    
+    public function buildIndexedQueries(bool $option):self {
+        $this->build_indexed_queries = $option;
+
+        return $this;
+    }
+
+    /**
+     * Format header authorization as basic
+     */
+    public function basic(string $username, string $password):self {
+        $authorization = base64_encode(sprintf("%s:%s", $username, $password));
+
+        $this->header('Authorization', 'Basic '.$authorization);
+
+        return $this;
+    }
+
+    /**
+     * Format header authorization as bearer
+     */
+    public function bearer(string $token):self {
+        $this->header('Authorization', 'Bearer '.$token);
+
+        return $this;
+    }
+
+    /**
+     * Defines the format of the request body that will be sent and processes the data along with the inclusion of the appropriate content-type. 
+     * Custom formats handlers: json, xml e form
+     */
+    public function requestFormat(string $format):self {
+        $this->request_format = $format;
+
+        return $this;
+    }
+
+    /**
+     * Defines the format of the response body that will be received. If it is not passed, it will be automatically detected. 
+     * Currently supported formats: json, xml and html
+     */
+    public function responseFormat(string $format):self {
+        $this->response_format = $format;
+
+        return $this;
+    }
+
+    /**
+     * Includes HTTP user-agent header
+     */
+    public function userAgent(string $user_agent = 'PHP RestClient 1.0.1'):self {
+        $this->curl_options[CURLOPT_USERAGENT] = $user_agent;
+        
+        return $this;
+    }
+
+    /**
+     * Includes SSL client certificate
+     */
+    public function sslCert(string $cert_filename, string $key_filename = null):self {
+        $this->curl_options[CURLOPT_SSLCERT] = $cert_filename;  
+        
+        if($key_filename){
+            $this->curl_options[CURLOPT_SSLKEY] = $key_filename;    
+        }
+
+        return $this;
+    }
+
+    /**
+     * Includes username and password to use in authentication
+     */
+    public function userPwd(string $user, string $pwd):self {
+        $this->curl_options[CURLOPT_USERPWD] = sprintf("%s:%s", $user, $pwd);
+
+        return $this;
+    }
+
+    /**
+     * Add headers for all requests
+     */
+    public function header(string $key, $value):self {
         $this->headers[$key] = $value;
-    }
 
-    public function setParameter(string $key, $value){
-        $this->parameters[$key] = $value;
-    }
+        return $this;
+    }    
 
-    public function setCurlOption($key, $value){
+    public function curlOption($key, $value):self {
         $this->curl_options[$key] = $value;
-    }
-    
-    public function setIdempotencyKeyName(string $name){
-        $this->setOption('idempotencykey', $name);
+
+        return $this;
     }
 
-    public function setFormat(string $format){
-        $this->setOption('format', $format);
-    }
-    
-    public function setResponseFormat(string $format){
-        $this->setOption('response_format', $format);
-    }
-
-    public function setCurlSSLCert($cert, $key = null){
-        $this->curl_options[CURLOPT_SSLCERT] = $cert;  
-        
-        if( !empty($key) ){
-            $this->curl_options[CURLOPT_SSLKEY] = $key;    
-        }
-    }
-    
-    public function enableLog(LogExtension $log){
-        $this->logger = $log;        
-    }
-
-    //If $key = null returns the last RestClientResponse object received
-    public function getResponse( int $key = null ){
-        if( !is_null($key) ){
-            if( array_key_exists($key, $this->response_history) ){
-                return $this->response_history[$key];    
-            }
-            return null;
-        }
-        
+    /**
+     * Returns the last Response received
+     */
+    public function getResponse():?Response {
         return empty($this->response_history) ? null : end($this->response_history);    
     }
 
-    public function getResponseHistory(){                
+    /**
+     * Returns an Array of received responses
+     */
+    public function getResponseHistory():Array {                
         return $this->response_history;
     }
 
-    // Request methods:
-    public function get(string $url, Array|string $parameters=[], Array $headers=[]){
+    /**
+     * Executes an HTTP request with GET method
+     */
+    public function get(string $url, Array|string $parameters = [], Array $headers = []):Response {
         return $this->execute($url, 'GET', $parameters, $headers);
     }
     
-    public function post(string $url, Array|string $parameters=[], Array $headers=[]){
+    /**
+     * Executes an HTTP request with POST method
+     */
+    public function post(string $url, Array|string $parameters = [], Array $headers = []):Response {
         return $this->execute($url, 'POST', $parameters, $headers);
     }
     
-    public function put(string $url, Array|string $parameters=[], Array $headers=[]){
+    /**
+     * Executes an HTTP request with PUT method
+     */
+    public function put(string $url, Array|string $parameters = [], Array $headers = []):Response {
         return $this->execute($url, 'PUT', $parameters, $headers);
     }
     
-    public function patch(string $url, Array|string $parameters=[], Array $headers=[]){
+    /**
+     * Executes an HTTP request with PATCH method
+     */
+    public function patch(string $url, Array|string $parameters = [], Array $headers = []):Response {
         return $this->execute($url, 'PATCH', $parameters, $headers);
     }
     
-    public function delete(string $url, Array|string $parameters=[], Array $headers=[]){
+    /**
+     * Executes an HTTP request with DELETE method
+     */
+    public function delete(string $url, Array|string $parameters = [], Array $headers = []):Response {
         return $this->execute($url, 'DELETE', $parameters, $headers);
     }
     
-    public function head(string $url, Array|string $parameters=[], Array $headers=[]){
+    /**
+     * Executes an HTTP request with HEAD method
+     */
+    public function head(string $url, Array|string $parameters = [], Array $headers = []):Response {
         return $this->execute($url, 'HEAD', $parameters, $headers);
     }    
     
-    public function execute(string $url, string $method='GET', Array|string $parameters=[], Array $headers=[]) :Response {
-        $ch = curl_init();
+    /**
+     * Executes an HTTP request
+     */
+    public function execute(string $url, string $method='GET', Array|string $parameters = [], Array $headers = []) :Response {
         $curlopt = $this->curl_options;
-        $curlopt[CURLOPT_USERAGENT] = $this->options['user_agent'];
-        
-        if($this->options['username'] && $this->options['password']){
-            $curlopt[CURLOPT_USERPWD] = sprintf("%s:%s", $this->options['username'], $this->options['password']);
-        }
 
-        $format = $this->options['format'] ? strtolower($this->options['format']) : '';
-
-        switch($format){
+        switch($this->request_format){
             case 'json':
-                if( is_array($parameters) ){
+                if(is_array($parameters)){
                     $parameters_string = empty($parameters) ? '' : json_encode($parameters);
                 }
                 else{
                     $parameters_string = (string) $parameters;
                 }
+
                 $headers['Content-Type'] = "application/json";
-                break;
-            
+                break;            
             case 'xml':
-                if( is_array($parameters) ){
+                if(is_array($parameters)){
                     if(count($parameters) == 1){
                         $root = array_key_first($parameters);
                         $array_parameters = $parameters[$root];    
@@ -163,7 +223,7 @@ class Request {
                         $array_parameters = $parameters;
                     }
 
-                    $xml = new SimpleXMLElement("<{$root}/>");
+                    $xml = new \SimpleXMLElement("<{$root}/>");
                     array_walk_recursive($array_parameters, [$xml, 'addChild']);
 
                     $parameters_string = $xml->asXML();
@@ -171,31 +231,26 @@ class Request {
                 else{
                     $parameters_string = (string) $parameters;
                 }
+
                 $headers['Content-Type'] = "application/xml";
                 break;
             
             case 'form':
-                if( is_array($parameters) ){
+                if(is_array($parameters)){
                     $parameters_string = http_build_query($parameters);
                 }
                 else{
                     $parameters_string = (string) $parameters;    
                 }
+
                 $headers['Content-Type'] = "application/x-www-form-urlencoded";
                 break;
 
             default:
-                // Allow passing parameters as a pre-encoded string (or something that
-                // allows casting to a string). Parameters passed as strings will not be
-                // merged with parameters specified in the default options.
                 if(is_array($parameters)){
-                    $parameters = array_merge($this->parameters, $parameters);
-                    $parameters_string = http_build_query($parameters);                    
-                    
-                    // http_build_query automatically adds an array index to repeated
-                    // parameters which is not desirable on most systems. This hack
-                    // reverts "key[0]=foo&key[1]=bar" to "key[]=foo&key[]=bar"
-                    if(!$this->options['build_indexed_queries']){
+                    $parameters_string = http_build_query($parameters);
+
+                    if(!$this->build_indexed_queries){
                         $parameters_string = preg_replace("/%5B[0-9]+%5D=/simU", "%5B%5D=", $parameters_string);
                     }
                 }
@@ -213,77 +268,35 @@ class Request {
             $curlopt[CURLOPT_POSTFIELDS] = $parameters_string;
         }
         elseif($parameters_string){
-            $url.= strpos($this->url, '?') ? '&' : '?';
+            $url.= strpos($url, '?') !== false ? '&' : '?';
             $url.= $parameters_string;
         }
-        
-        if($this->options['base_url']){
-            if($url[0] != '/' && substr($this->options['base_url'], -1) != '/'){
-                $url = '/' . $url;
-            }
-            $url = $this->options['base_url'] . $url;
-        }        
-        $curlopt[CURLOPT_URL] = $url;
 
-        if( $this->options['idempotencykey'] ){
-            $idempotencyvalue = strtoupper(implode('-', [
-                bin2hex(random_bytes(4)),
-                bin2hex(random_bytes(2)),
-                bin2hex(chr((ord(random_bytes(1)) & 0x0F) | 0x40)) . bin2hex(random_bytes(1)),
-                bin2hex(chr((ord(random_bytes(1)) & 0x3F) | 0x80)) . bin2hex(random_bytes(1)),
-                bin2hex(random_bytes(6))
-            ]));
+        if($this->base_url){
+            $concat_url = trim($this->base_url, '/');
+            $concat_url.= '/'.ltrim($url, '/');
 
-            $headers[ $this->options['idempotencykey'] ] = $idempotencyvalue;
+            $url = $concat_url;
         }
 
-        if(count($this->headers) || count($headers) || !empty($this->options['token'])){
-            $curlopt[CURLOPT_HTTPHEADER] = [];
+        $curlopt[CURLOPT_URL] = $url;        
 
-            $header_authorization = [];
-            if( $this->options['token'] ){
-                $header_authorization['authorization'] = 'Bearer '.$this->options['token'];
-            }
+        $headers = array_merge($this->headers, $headers);
 
-            $headers = array_merge($header_authorization, $this->headers, $headers);
+        if(!empty($headers)){
+            $curlopt[CURLOPT_HTTPHEADER] = [];            
+            
             foreach($headers as $key => $values){
-                foreach(is_array($values)? $values : [$values] as $value){
+                foreach(is_array($values) ? $values : [$values] as $value){
                     $curlopt[CURLOPT_HTTPHEADER][] = sprintf("%s:%s", $key, $value);
                 }
             }
         }
-        
-        curl_setopt_array($ch, $curlopt);
-        
-        $request = new RequestParams($url, strtoupper($method), $parameters, $headers, $curlopt);
-        $request->idempotencykey = $idempotencyvalue ?? null;
-        $request->info = $this->options['info'];                
-        
-        $start_time = microtime(true);
-        $curl_response = curl_exec($ch);
-        $end_time = microtime(true);
-        
-        $request->execution_time = ($end_time - $start_time);
 
-        $response = new Response;
-        $response->setCode(curl_getinfo($ch, CURLINFO_HTTP_CODE));
-        $response->setInfo((object) curl_getinfo($ch));
-        $response->setError(curl_error($ch));
-        $response->setFormat($this->options['response_format']);
-        $response->setRequest($request);
-        $response->parse_response($curl_response);
+        $response = new Response(new \RestClient\cURL\Handler($curlopt), $this->response_format);
+
+        $this->response_history[] = $response;
         
-        curl_close($ch);
-
-        empty($this->response_history) ? $this->response_history[1] = $response : $this->response_history[] = $response;
-
-        if($this->logger){          
-            $logdata = new LogData;
-            $logdata->parse($response);  
-            
-            $this->logger->register($logdata);
-        }
-
         return $response;
     }
     
@@ -291,15 +304,25 @@ class Request {
         string $url, 
         string $method = 'GET', 
         Array|string $parameters = [], 
-        Array $headers = [], 
-        Array $options = [], 
-        Array $curl_options = [], 
-        LogExtension $log = null)
-    {
-        $client = new self($options, [], [], $curl_options);        
-        
-        if($log){
-            $client->enableLog($log);
+        Array $headers = [],
+        Array $curl_options = [],
+        string $request_format = null,
+        string $response_format = null,
+        bool $build_indexed_queries = false
+    ):Response {
+        $client = new self;
+        $client->buildIndexedQueries($build_indexed_queries);
+
+        if($request_format){
+            $client->requestFormat($request_format);
+        }
+
+        if($response_format){
+            $client->responseFormat($response_format);
+        }
+
+        foreach($curl_options as $curl_option_key => $curl_option_value){
+            $client->curlOption($curl_option_key, $curl_option_value);
         }
         
         return $client->execute($url, $method, $parameters, $headers);

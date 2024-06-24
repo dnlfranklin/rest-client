@@ -1,57 +1,145 @@
 <?php
+/**
+* @method mixed get_url()
+*
+* @method mixed get_content_type()
+*
+* @method mixed get_http_code()
+*
+* @method mixed get_header_size()
+*
+* @method mixed get_request_size()
+*
+* @method mixed get_filetime()
+*
+* @method mixed get_ssl_verify_result()
+*
+* @method mixed get_redirect_count()
+*
+* @method mixed get_total_time()
+*
+* @method mixed get_namelookup_time()
+*
+* @method mixed get_connect_time()
+*
+* @method mixed get_pretransfer_time()
+*
+* @method mixed get_size_upload()
+*
+* @method mixed get_size_download()
+*
+* @method mixed get_speed_download()
+*
+* @method mixed get_speed_upload()
+*
+* @method mixed get_download_content_length()
+*
+* @method mixed get_upload_content_length()
+*
+* @method mixed get_starttransfer_time()
+*
+* @method mixed get_redirect_time()
+*
+* @method mixed get_redirect_url()
+*
+* @method mixed get_primary_ip()
+*
+* @method mixed get_certinfo()
+*
+* @method mixed get_primary_port()
+*
+* @method mixed get_local_ip()
+*
+* @method mixed get_local_port()
+*
+* @method mixed get_http_version()
+*
+* @method mixed get_protocol()
+*
+* @method mixed get_ssl_verifyresult()
+*
+* @method mixed get_scheme()
+*
+* @method mixed get_appconnect_time_us()
+*
+* @method mixed get_connect_time_us()
+*
+* @method mixed get_namelookup_time_us()
+*
+* @method mixed get_pretransfer_time_us()
+*
+* @method mixed get_redirect_time_us()
+*
+* @method mixed get_starttransfer_time_us()
+*
+* @method mixed get_total_time_us()
+*
+* @method mixed get_request_method()
+*
+* @method mixed get_request_header()
+*
+* @method mixed get_request_parameters()
+*     
+* @method mixed get_errno()
+*
+* @method mixed get_errmessage()
+*
+* @method mixed get_content()
+*
+* @method mixed get_headers()
+*
+* @method mixed get_body()
+*
+* @method mixed get_data()
+*/
 
 namespace RestClient;
 
-class Response {
-    const BODY_ALIAS = ['response', 'data'];
-    const BODY_DECODE_ALIAS = [
+
+class Response {    
+    
+    const DECODE_ALIAS = [
+        'response', 
+        'data',
         'decode', 
         'decode_body', 
         'decode_response', 
         'decode_data'
     ];
 
-    private $request;
-    private $code;
-    private $info;
-    private $error;
-    private $format;
     private $headers;
     private $body;
 
-    public function __get($key){
-        if( in_array($key, self::BODY_ALIAS) ){
-            return $this->body;
-        }
+    public function __construct(
+        private \RestClient\cURL\Handler $ch, 
+        private ?string $format = null
+    ){
+        $this->parse_response($ch->content);
+    }
 
-        if( in_array($key, self::BODY_DECODE_ALIAS) ){
+    public function __call($method, $arguments){
+        if(str_starts_with($method, 'get_')){
+            $var = substr($method, 4);
+            
+            if(!empty($var)){
+                return $this->{$var};
+            }
+        }    
+    }
+
+    public function __get(string $name){
+        if(in_array($name, self::DECODE_ALIAS)){
             return $this->decode();
         }
         
-        return $this->{$key};    
+        if(property_exists($this, $name)){
+            return $this->{$name};
+        }
+
+        return $this->ch->{$name};    
     }
 
-    public function setCode($code){
-        $this->code = $code;
-    }
-
-    public function setInfo($info){
-        $this->info = $info;
-    }
-
-    public function setError($error){
-        $this->error = $error;
-    }
-
-    public function setFormat($format){
-        $this->format = $format;
-    }
-
-    public function setRequest(RequestParams $request){
-        $this->request = $request;
-    }
-
-    public function parse_response($response){
+    private function parse_response(string $response){
         $headers = [];
         $response_status_lines = [];
 
@@ -90,12 +178,12 @@ class Response {
         // Extract format from response content-type header. 
         if( empty($this->format) && !empty($this->headers->content_type)) {
             if( preg_match("/(\w+)\/(\w+)(;[.+])?/", $this->headers->content_type, $matches) ){
-                $this->setFormat($matches[2]);
+                $this->format = $matches[2];
             }                
         } 
     }
 
-    public function decode( Callable $callable = null ){
+    public function decode(Callable $callable = null){
         if(!empty($callable)){
             return call_user_func($callable, $this->body);
         }
