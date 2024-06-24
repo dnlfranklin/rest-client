@@ -144,10 +144,8 @@ $data = $res->decode(function($body){
 |pretransfer_time|get_pretransfer_time()|Tempo decorrido do início até que a transferência de arquivos esteja para iniciar, em microssegundos|
 |size_upload|get_size_upload()|Número total de bytes enviados|
 |size_download|get_size_download()|Número total de bytes recebidos|
-|speed_download|get_speed_download()|Velocidade média de recepção
-|
-|speed_upload|get_speed_upload()|Velocidade média de envio
-|
+|speed_download|get_speed_download()|Velocidade média de recepção|
+|speed_upload|get_speed_upload()|Velocidade média de envio|
 |download_content_length|get_download_content_length()|O tamanho do conteúdo recebido. Isto é o valor lido do campo Content-Length:. -1 se o tamanho for desconhecido|
 |upload_content_length|get_upload_content_length()|O tamanho especificado do envio. -1 se o tamanho for desconhecido|
 |starttransfer_time|get_starttransfer_time()|Tempo em microssegundos decorrido do início até o recebimento do primeiro byte|
