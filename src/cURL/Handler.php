@@ -67,7 +67,7 @@ class Handler{
         $this->request_method = empty($this->options[CURLOPT_POST]) ? $this->options[CURLOPT_CUSTOMREQUEST] ?? 'GET' : 'POST';
 
         $query_parameters = parse_url($this->url, PHP_URL_QUERY);
-        parse_str($query_parameters, $this->request_parameters); 
+        parse_str($query_parameters ?? '', $this->request_parameters); 
 
         if(isset($this->options[CURLOPT_POSTFIELDS])){
             parse_str($this->options[CURLOPT_POSTFIELDS], $post_parameters); 
