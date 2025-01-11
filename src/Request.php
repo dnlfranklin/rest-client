@@ -257,9 +257,24 @@ class Request {
                     }
 
                     $xml = new \SimpleXMLElement("<{$root}/>");
-                    array_walk_recursive($array_parameters, [$xml, 'addChild']);
 
-                    $parameters_string = $xml->asXML();
+                    $convertArrayToXml = function($array, &$xml, $parent_key = null) use (&$convertArrayToXml) {
+                        foreach ($array as $key => $value) {
+                            if (is_array($value)) {
+                                $subnode = $xml->addChild($parent_key ?: $key);
+                                
+                                $convertArrayToXml($value, $subnode, $key);
+                            } else {
+                                $xml->addChild($key, htmlspecialchars($value));
+                            }
+                        }
+                    };
+                    
+                    $rand_key = 'tmp_'.uniqid(date('YmdHis'));
+
+                    $convertArrayToXml($array_parameters, $xml, $rand_key);
+
+                    $parameters_string = str_replace(["<{$rand_key}>", "</{$rand_key}>"], '', $xml->asXML());
                 }
                 else{
                     $parameters_string = (string) $parameters;
@@ -377,5 +392,3 @@ class Request {
     }
     
 }
-
-
