@@ -107,6 +107,7 @@ class Response {
         'decode_data'
     ];
 
+    private $status_line;
     private $headers;
     private $body;
 
@@ -150,6 +151,7 @@ class Response {
     private function parse_response(string $response){
         $headers = [];
         $response_status_lines = [];
+        $status_line = null;
 
         $line = strtok($response, "\n");        
         do {
@@ -160,6 +162,10 @@ class Response {
             elseif(strpos($line, 'HTTP') === 0){
                 // One or more HTTP status lines
                 $response_status_lines[] = trim($line);
+
+                if (preg_match('/HTTP\/[\d.]+\s(\d+)\s(.+)/', $line, $matches)) {
+                    $status_line = $matches[1] . ' ' . trim($matches[2]);
+                }
             }
             else { 
                 // Has to be a header
@@ -182,6 +188,7 @@ class Response {
         
         $this->headers = $headers;
         $this->body = strtok("");
+        $this->status_line = $status_line;
 
         // Extract format from response content-type header. 
         if( empty($this->format) && array_key_exists('content-type', $this->headers)) {
